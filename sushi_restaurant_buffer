@@ -1,0 +1,126 @@
+/*----------------------------------------------------------------------------
+	
+	CIRCULAR BUFFER SIMULATION FOR SUSHI KING RESTAURANT
+	----------------Smiling, Served Fresh---------------
+
+*----------------------------------------------------------------------------*/
+#include "stm32f10x.h"
+#include "cmsis_os.h"
+#include "uart.h"
+
+void x_Thread1 (void const *argument);
+void x_Thread2 (void const *argument);
+void x_Thread3 (void const *argument);
+void x_Thread4 (void const *argument);
+void x_Thread5 (void const *argument);
+osThreadDef(x_Thread1, osPriorityNormal, 1, 0);
+osThreadDef(x_Thread2, osPriorityNormal, 1, 0);
+osThreadDef(x_Thread3, osPriorityNormal, 1, 0);
+osThreadDef(x_Thread4, osPriorityNormal, 1, 0);
+
+
+osThreadId T_x1;
+osThreadId T_x2;
+osThreadId T_x3;
+osThreadId T_x4;
+
+
+osMutexId x_mutex;
+osMutexDef(x_mutex);
+osSemaphoreId item_semaphore;        // Semaphore ID
+osSemaphoreDef(item_semaphore);      // Semaphore definition
+osSemaphoreId space_semaphore;       // Semaphore ID
+osSemaphoreDef(space_semaphore);     // Semaphore definition
+
+long int x=0;
+long int h=0;
+long int i=0;
+long int j=0;
+long int k=0;
+
+
+const unsigned int N = 5;
+unsigned char buffer[N]; 		//shared resources: bounded buffer
+unsigned int insertPtr = 0;
+unsigned int removePtr = 0;
+
+void put(unsigned char an_item){
+	osSemaphoreWait(space_semaphore, osWaitForever); // able to executre instantly since semaphore token is fully available
+	osMutexWait(x_mutex, osWaitForever);
+	buffer[insertPtr] = an_item; 			//insert the item value into circular buffer
+	insertPtr = (insertPtr + 1) % N; 	//update new location of next item by +1
+	osMutexRelease(x_mutex);					
+	osSemaphoreRelease(item_semaphore);	
+}
+
+unsigned char get(){
+	unsigned int rr = 0xff;
+	osSemaphoreWait(item_semaphore, osWaitForever);
+	osMutexWait(x_mutex, osWaitForever);
+	rr = buffer[removePtr];						//read the current value inside circular buffer
+	removePtr = (removePtr + 1) % N; 	//remove the item inside the circular buffer & move to next location
+	osMutexRelease(x_mutex);
+	osSemaphoreRelease(space_semaphore);
+	return rr;
+}
+
+int loopcount = 7; 
+
+//-------Open Restaurant-----------//
+
+void x_Thread1 (void const *argument) 
+{
+	//chef #1
+	unsigned char item = 0x30;  //based on ASCII chart, 0x30 equal to digit '0'
+	for(; h<loopcount; h++){
+  	put(item++);
+	}
+}
+
+void x_Thread2 (void const *argument) 
+{
+	//chef #2
+	unsigned char item = 0x41;  //based on ASCII chart, 0x41 equal to digit 'A'
+	for(; i<loopcount; i++){
+		put(item++);
+	}
+}
+
+void x_Thread3 (void const *argument) 
+{
+	//customer #1
+	unsigned int data = 0x00;
+	for(; j<loopcount; j++){
+		data = get();  					//item in buffer is being transfered into 'data' variable
+		SendChar(data);
+	}
+}
+
+void x_Thread4 (void const *argument) 
+{
+	//customer #2
+	unsigned int c2data = 0x00;
+	for(; k<loopcount; k++){
+		c2data = get();
+		SendChar(c2data);
+	}
+}
+
+//-------Closed Restaurant-----------//
+
+int main (void) 
+{
+	osKernelInitialize ();                    // initialize CMSIS-RTOS
+	USART1_Init();
+	item_semaphore = osSemaphoreCreate(osSemaphore(item_semaphore), 0); //item_semaphore token initially 0
+	space_semaphore = osSemaphoreCreate(osSemaphore(space_semaphore), N); //space_semaphore token has fixed number = N
+	x_mutex = osMutexCreate(osMutex(x_mutex));	//there is only 1 mutex created 
+	
+	T_x1 = osThreadCreate(osThread(x_Thread1), NULL);//producer
+	T_x2 = osThreadCreate(osThread(x_Thread2), NULL);//another producer
+	T_x3 = osThreadCreate(osThread(x_Thread3), NULL);//consumer
+	T_x4 = osThreadCreate(osThread(x_Thread4), NULL);//another consumer
+	
+	osKernelStart ();                         // start thread execution 
+}
+
